@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.JsonPatch;
+using Microsoft.AspNetCore.Mvc;
 using ProductsAPI.Data;
 using ProductsAPI.Models;
 using ProductsAPI.Models.Dto;
@@ -9,11 +10,21 @@ namespace ProductsAPI.Controllers
     [ApiController]
     public class ProductAPIController : ControllerBase
     {
+        public ApplicationDbContext _db { get; }
+        public ILogger<ProductAPIController> _logger { get; }
+
+        public ProductAPIController(ApplicationDbContext db,ILogger<ProductAPIController> logger)
+        {
+            _db = db;
+            _logger = logger;
+        }
+
         [ProducesResponseType(StatusCodes.Status200OK)]
         [HttpGet]
         public ActionResult<IEnumerable<ProductDTO>> GetProducts()
         {
-            return Ok(ProductStore.productList);
+            /*_logger.LogInformation("Getting Products");*/
+            return Ok(_db.Products);
         }
 
         [ProducesResponseType(StatusCodes.Status201Created)]
@@ -22,9 +33,12 @@ namespace ProductsAPI.Controllers
         [HttpGet("{id:int}", Name = "GetProduct")]
         public ActionResult<ProductDTO> GetProduct(int id)
         {
-            if (id == 0) return BadRequest();
+            if (id == 0) {
+                /*_logger.LogError("Get Product Erro with Id" + id);*/
+            return BadRequest();
+            } 
 
-            var product = ProductStore.productList.FirstOrDefault(u => u.Id == id);
+            var product = _db.Products.FirstOrDefault(u => u.Id == id);
 
             if (product == null) return NotFound();
 
@@ -33,24 +47,25 @@ namespace ProductsAPI.Controllers
 
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
         [HttpPost]
-        public ActionResult<ProductDTO> CreateProduct([FromBody] ProductDTO product)
+        public ActionResult<ProductDTO> CreateProduct([FromBody] ProductDTO productDTO)
         {
-            /*if (!ModelState.IsValid) return BadRequest();*/
 
-            if (product == null) return BadRequest();
+            if (productDTO == null) return BadRequest();
 
-            if (product.Id > 0)
+            Product model = new()
             {
-                return StatusCode(StatusCodes.Status500InternalServerError);
-            }
+                Name = productDTO.Name,
+                Description = productDTO.Description,
+                ImageURL = productDTO.ImageURL,
+                Price = productDTO.Price,
+                CreatedAt = DateTime.Now,
+            };
 
-            product.Id = ProductStore.productList.OrderByDescending(u => u.Id).FirstOrDefault().Id + 1;
+            _db.Products.Add(model);
+            _db.SaveChanges();
 
-            ProductStore.productList.Add(product);
-
-            return CreatedAtRoute("GetProduct", new { id = product.Id }, product);
+            return CreatedAtRoute("GetProduct", new { id = model.Id }, model);
         }
 
         [ProducesResponseType(StatusCodes.Status204NoContent)]
@@ -63,31 +78,38 @@ namespace ProductsAPI.Controllers
             {
                 return BadRequest();
             }
-            var product = ProductStore.productList.FirstOrDefault(u => u.Id == id);
+            var product = _db.Products.FirstOrDefault(u => u.Id == id);
 
-            if (product == null) return NotFound();
+            if(product == null) {
+                return NotFound();
+            }
 
-            ProductStore.productList.Remove(product);
-
+            _db.Products.Remove(product);
+            _db.SaveChanges();
             return NoContent();
         }
 
 
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
         [HttpPut("{id:int}", Name = "UpdateProduct")]
         public IActionResult UpdateProduct(int id, [FromBody]ProductDTO productDTO)
         {
-            if (productDTO == null || id != productDTO.Id) return BadRequest();
-            
-            var product = ProductStore.productList.FirstOrDefault(u => u.Id == id);
+            if (productDTO == null) return BadRequest();
 
-            product.Name = productDTO.Name;
-            product.Description = productDTO.Description;
-            product.ImageURL = productDTO.ImageURL;
-            product.Price = productDTO.Price;
+            var existingProduct = _db.Products.FirstOrDefault(u => u.Id == id);
 
-            return Ok(product);
+            if (existingProduct == null) return NotFound();
+
+            existingProduct.Name = productDTO.Name;
+            existingProduct.Description = productDTO.Description;
+            existingProduct.ImageURL = productDTO.ImageURL;
+            existingProduct.Price = productDTO.Price;
+
+            _db.SaveChanges();
+            return Ok(existingProduct);
         }
+
     }
 }
